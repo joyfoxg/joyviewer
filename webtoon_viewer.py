@@ -12,7 +12,7 @@ from PIL import Image
 import io
 
 # 설정
-APP_NAME = "JoyViewer - Webtoon Reader v3.4"
+APP_NAME = "JoyViewer - Webtoon Reader v3.5"
 PORT = 58210
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "joyviewer_cache")
 
@@ -1516,18 +1516,25 @@ HTML_CONTENT = """
             if (isWaitingForNext) return true;
             
             const container = document.getElementById('viewer-container');
-            // 스크롤이 맨 아래에 도달했는지 확인 (약간의 오차 허용)
-            if (container.scrollHeight > 0 && container.scrollTop + container.clientHeight >= container.scrollHeight - 5) {
+            // 스크롤이 맨 아래에 도달했는지 확인 (바닥에서 10px 이내)
+            // 단, scrollHeight가 clientHeight보다 클 때(스크롤이 존재할 때)만 동작하도록 강화
+            const isAtBottom = container.scrollHeight > container.clientHeight && 
+                               container.scrollTop + container.clientHeight >= container.scrollHeight - 10;
+
+            if (isAtBottom) {
                 if (currentEpIndex + 1 < currentEpisodes.length) {
                     isWaitingForNext = true;
-                    // 다음화 대기 시간은 '끊어 읽기'의 대기 시간을 공통으로 사용
                     const pauseSec = parseFloat(document.getElementById('step-pause').value) || 3;
                     
                     autoNextTimeout = setTimeout(async () => {
-                        if (isAutoScrolling) {
+                        const currentContainer = document.getElementById('viewer-container');
+                        // 대기 시간이 끝난 시점에도 여전히 바닥 근처인지 재확인 (이동 시 오차 고려 30px)
+                        const stillAtBottom = currentContainer.scrollTop + currentContainer.clientHeight >= currentContainer.scrollHeight - 30;
+                        
+                        if (isAutoScrolling && stillAtBottom) {
                             await loadNextEpisode();
-                            // 다음화 로딩이 완료되고 scrollTop이 0으로 초기화된 후에 플래그 해제
-                            isWaitingForNext = false;
+                            // 다음 화 로딩 후 레이아웃이 완전히 잡힐 때까지 1초간 쿨다운 (연속 점핑 방지)
+                            setTimeout(() => { isWaitingForNext = false; }, 1000);
                         } else {
                             isWaitingForNext = false;
                         }

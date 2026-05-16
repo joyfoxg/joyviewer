@@ -1,0 +1,11 @@
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+joyviewer_cache/
+joyviewer_config.json
+*.cbz
+*.zip
+*.log
+.gemini/

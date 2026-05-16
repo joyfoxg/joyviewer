@@ -1,4 +1,4 @@
-# JoyViewer - Webtoon Reader v3.5
+# JoyViewer - Webtoon Reader v3.6
 
 JoyViewer는 로컬 환경에 저장된 웹툰 이미지와 압축 파일(.cbz)을 최적의 환경에서 감상할 수 있도록 설계된 강력한 윈도우용 웹툰 뷰어입니다. 직관적이고 미려한 UI와 더불어 완전히 자동화된 스크롤링 기능을 제공하여 쾌적한 정주행 환경을 제공합니다.
 

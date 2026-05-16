@@ -12,7 +12,7 @@ from PIL import Image
 import io
 
 # 설정
-APP_NAME = "JoyViewer - Webtoon Reader v3.5"
+APP_NAME = "JoyViewer - Webtoon Reader v3.6"
 PORT = 58210
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "joyviewer_cache")
 
@@ -1135,7 +1135,7 @@ HTML_CONTENT = """
                 
                 <div id="ui-step" class="mode-ui" style="display: none; align-items: center; gap: 8px;">
                     <input type="number" id="step-distance" value="700" title="이동 길이(px)" class="ctrl-input"> px
-                    <input type="number" id="step-pause" value="3" title="대기 시간(초)" class="ctrl-input" style="width: 45px;"> 초
+                    <input type="number" id="step-pause" value="2" title="대기 시간(초)" class="ctrl-input" style="width: 45px;"> 초
                 </div>
                 
                 <div style="width: 1px; height: 20px; background: var(--glass-border); margin: 0 5px;"></div>
@@ -1356,12 +1356,22 @@ HTML_CONTENT = """
             const stack = document.getElementById('image-stack');
             stack.innerHTML = '';
             
-            images.forEach(url => {
+            let firstImgLoadPromise = Promise.resolve();
+            images.forEach((url, i) => {
                 const img = document.createElement('img');
                 img.className = 'webtoon-image';
                 img.src = url;
                 img.loading = 'lazy';
                 stack.appendChild(img);
+
+                // 첫 번째 이미지의 실제 로딩 완료를 감지하는 프로미스 생성
+                if (i === 0) {
+                    firstImgLoadPromise = new Promise(resolve => {
+                        img.onload = resolve;
+                        img.onerror = resolve; // 에러가 나더라도 무한 대기를 방지하기 위해 resolve 처리
+                        if (img.complete) resolve();
+                    });
+                }
             });
             
             if (pendingScrollTop !== null) {
@@ -1374,6 +1384,9 @@ HTML_CONTENT = """
             }
             
             document.getElementById('viewer-controls').style.display = 'flex';
+            
+            // 첫 번째 이미지가 브라우저에 확실히 로딩될 때까지 대기
+            await firstImgLoadPromise;
             
             // 이전/다음 화 버튼 상태
             const nextBtn = document.querySelector('.btn-next');
@@ -1533,8 +1546,8 @@ HTML_CONTENT = """
                         
                         if (isAutoScrolling && stillAtBottom) {
                             await loadNextEpisode();
-                            // 다음 화 로딩 후 레이아웃이 완전히 잡힐 때까지 1초간 쿨다운 (연속 점핑 방지)
-                            setTimeout(() => { isWaitingForNext = false; }, 1000);
+                            // 다음 화 로딩 후 첫 장면을 볼 수 있도록 3초간 대기 (연속 점핑 방지 겸용)
+                            setTimeout(() => { isWaitingForNext = false; }, 3000);
                         } else {
                             isWaitingForNext = false;
                         }

@@ -12,7 +12,7 @@ from PIL import Image
 import io
 
 # 설정
-APP_NAME = "JoyViewer - Webtoon Reader v3.6"
+APP_NAME = "JoyViewer - Webtoon Reader v4.1"
 PORT = 58210
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "joyviewer_cache")
 
@@ -36,16 +36,11 @@ def get_local_ip():
 
 class WebtoonApi:
     def __init__(self):
-        self.library_folders = []
-        self.custom_thumbnails = {}
-        self.bookmarks = []
         config = self.load_config()
-        if 'library_folders' in config:
-            self.library_folders = config['library_folders']
-        if 'custom_thumbnails' in config:
-            self.custom_thumbnails = config['custom_thumbnails']
-        if 'bookmarks' in config:
-            self.bookmarks = config['bookmarks']
+        self.library_folders = config.get('library_folders', [])
+        self.custom_thumbnails = config.get('custom_thumbnails', {})
+        self.bookmarks = config.get('bookmarks', [])
+        self.password = config.get('password', '')
         self.current_webtoon = ""
         self.current_episode = ""
 
@@ -64,8 +59,21 @@ class WebtoonApi:
     def save_config(self, config_dict):
         try:
             import json
+            current_config = self.load_config()
+            current_config.update(config_dict)
+            
+            # 인스턴스 변수 동기화
+            if 'library_folders' in config_dict:
+                self.library_folders = config_dict['library_folders']
+            if 'custom_thumbnails' in config_dict:
+                self.custom_thumbnails = config_dict['custom_thumbnails']
+            if 'bookmarks' in config_dict:
+                self.bookmarks = config_dict['bookmarks']
+            if 'password' in config_dict:
+                self.password = config_dict['password']
+                
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(config_dict, f, ensure_ascii=False, indent=4)
+                json.dump(current_config, f, ensure_ascii=False, indent=4)
             return True
         except:
             return False
@@ -296,9 +304,58 @@ def serve_image(payload):
     else:
         return static_file(img_file, root=episode_path)
 
+def check_auth():
+    config = api.load_config()
+    pw = config.get('password', '')
+    if not pw: return True
+    if request.remote_addr in ('127.0.0.1', 'localhost'): return True
+    
+    # 쿠키 기반 인증 확인
+    token = request.get_cookie('auth_token')
+    return token == pw
+
+@app.hook('before_request')
+def protect_routes():
+    # 메인 페이지와 로그인 API는 허용
+    if request.path in ('/', '/api/login'):
+        return
+    
+    # 그 외 모든 경로는 인증 체크
+    if not check_auth():
+        from bottle import abort
+        abort(401, "Unauthorized")
+
 @app.route('/')
 def index():
-    return HTML_CONTENT.replace('<head>', '<head>\n    <script>window.__IS_BOTTLE__ = true;</script>')
+    is_web = True # 이 경로는 항상 Bottle(서버)을 통해 들어옴
+    config = api.load_config()
+    pw = config.get('password', '')
+    
+    # 로컬이 아니고 암호가 설정되어 있는데 인증이 안된 경우
+    needs_login = False
+    if request.remote_addr not in ('127.0.0.1', 'localhost') and pw:
+        if not check_auth():
+            needs_login = True
+
+    script = f'<script>window.__IS_BOTTLE__ = true; window.__NEEDS_LOGIN__ = {"true" if needs_login else "false"};</script>'
+    return HTML_CONTENT.replace('<head>', f'<head>\n    {script}')
+
+@app.route('/api/login', method='POST')
+def api_login():
+    import json
+    try: data = request.json
+    except:
+        import ast
+        data = ast.literal_eval(request.body.read().decode('utf-8'))
+    
+    pw = data.get('password', '')
+    config = api.load_config()
+    saved_pw = config.get('password', '')
+    
+    if pw == saved_pw:
+        response.set_cookie('auth_token', pw, max_age=3600*24*30, path='/')
+        return json.dumps({"status": "success"})
+    return json.dumps({"status": "error", "message": "암호가 틀렸습니다."})
 
 @app.route('/api/library')
 def api_library():
@@ -1083,24 +1140,107 @@ HTML_CONTENT = """
             .webtoon-image {
                 min-height: 400px;
             }
+
+            #pw-setting-row {
+                display: none !important; /* 모바일 접속 시에는 암호 변경 칸을 숨김 */
+            }
+        }
+
+        /* Login Overlay */
+        #login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--bg-dark);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .login-box {
+            background: var(--sidebar-bg);
+            padding: 30px;
+            border-radius: 12px;
+            border: 1px solid var(--glass-border);
+            width: 300px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+        }
+        .login-box h2 {
+            margin-bottom: 20px;
+            color: var(--accent);
+        }
+        .login-box input {
+            width: 100%;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 6px;
+            padding: 10px;
+            color: #fff;
+            margin-bottom: 15px;
+            outline: none;
+            text-align: center;
+        }
+        .login-box button {
+            width: 100%;
+            background: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: 6px;
+            padding: 10px;
+            font-weight: 800;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
+    <div id="login-overlay" style="display: none;">
+        <div class="login-box">
+            <h2>JoyViewer Login</h2>
+            <input type="password" id="login-pw" placeholder="접속 암호를 입력하세요">
+            <button onclick="doLogin()">로그인</button>
+            <p id="login-msg" style="color: #ff4d4d; font-size: 12px; margin-top: 10px; display: none;"></p>
+        </div>
+    </div>
     <div id="sidebar">
         <div class="sidebar-header">
-            <div class="logo">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
-                JoyViewer
+            <div style="display: flex; align-items: center; justify-content: space-between;">
+                <div class="logo" style="margin-bottom: 0;">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                    <span>JoyViewer</span>
+                </div>
+                <span style="font-size: 11px; background: rgba(0, 255, 163, 0.1); color: var(--accent); border: 1px solid var(--accent-glow); padding: 2px 6px; border-radius: 20px; font-weight: 800; font-family: monospace; user-select: none;">v4.1</span>
             </div>
-            <button class="btn-folder" onclick="selectFolder()">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
-                폴더 추가
+        </div>
+        <div id="server-info-box" style="padding: 12px 15px; border-bottom: 1px solid var(--glass-border);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <span style="font-size: 11px; color: var(--text-dim); font-weight: 600;">원격 접속 정보</span>
+                <span id="btn-copy-url" onclick="copyServerUrl()" style="font-size: 10px; color: var(--accent); cursor: pointer; padding: 2px 4px; border: 1px solid var(--accent); border-radius: 3px;">주소 복사</span>
+            </div>
+            <div id="display-server-url" style="font-size: 13px; color: #fff; font-weight: 700; margin-bottom: 8px; word-break: break-all; font-family: monospace;">Loading...</div>
+            <div id="pw-setting-row" style="display: flex; gap: 5px;">
+                <input type="password" id="input-server-pw" placeholder="접속 암호 설정" style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--glass-border); border-radius: 4px; padding: 5px 8px; color: #fff; font-size: 11px; outline: none;">
+                <button onclick="saveServerPassword()" style="background: var(--accent); color: #000; border: none; border-radius: 4px; padding: 0 8px; font-size: 11px; font-weight: 800; cursor: pointer;">저장</button>
+            </div>
+            <button class="btn-folder" onclick="selectFolder()" style="width:100%; margin-top:12px; background: rgba(255,255,255,0.03); border: 1px dashed var(--glass-border); color: #fff; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; transition:all 0.2s;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
+                웹툰폴더+
             </button>
         </div>
+
         <div id="webtoon-list" class="list-container">
-            <div class="empty-state" style="padding-top: 50px;">
-                <p>우측 상단의 폴더 추가를 눌러<br>웹툰을 불러오세요.</p>
+            <div class="section-title" onclick="toggleLibraryCollapse()" style="cursor:pointer; display:flex; justify-content:space-between; align-items:center; user-select:none;">
+                <span>내 서재</span>
+                <span id="lib-collapse-icon" style="font-size:10px; transition: transform 0.2s; margin-right: 5px;">▼</span>
+            </div>
+            <div id="webtoon-items-wrapper">
+                <div class="empty-state" style="padding-top: 30px;">
+                    <p>아래 '웹툰폴더+'를 눌러<br>웹툰을 불러오세요.</p>
+                </div>
             </div>
         </div>
         <div id="episode-list" class="list-container" style="display: none; border-top: 1px solid var(--glass-border);">
@@ -1253,6 +1393,25 @@ HTML_CONTENT = """
         let isBookmarkPanelOpen = false;
         let bookmarks = [];
 
+        let isLibraryCollapsed = false;
+        function toggleLibraryCollapse() {
+            isLibraryCollapsed = !isLibraryCollapsed;
+            const wrapper = document.getElementById('webtoon-items-wrapper');
+            const icon = document.getElementById('lib-collapse-icon');
+            const listContainer = document.getElementById('webtoon-list');
+            if (wrapper) {
+                if (isLibraryCollapsed) {
+                    wrapper.style.display = 'none';
+                    if (listContainer) listContainer.style.flex = 'none';
+                    if (icon) icon.style.transform = 'rotate(-90deg)';
+                } else {
+                    wrapper.style.display = 'block';
+                    if (listContainer) listContainer.style.flex = '1';
+                    if (icon) icon.style.transform = 'rotate(0deg)';
+                }
+            }
+        }
+
         async function selectFolder() {
             const result = await ApiWrapper.select_folder();
             if (result.status === "success") {
@@ -1263,11 +1422,11 @@ HTML_CONTENT = """
         async function loadLibrary() {
             showLoader(true);
             const webtoons = await ApiWrapper.get_library();
-            const list = document.getElementById('webtoon-list');
-            list.innerHTML = '<div class="section-title">내 서재</div>';
+            const wrapper = document.getElementById('webtoon-items-wrapper');
+            wrapper.innerHTML = '';
             
             if (webtoons.length === 0) {
-                list.innerHTML += '<div class="empty-state"><p>웹툰을 찾을 수 없습니다.</p></div>';
+                wrapper.innerHTML = '<div class="empty-state"><p>웹툰을 찾을 수 없습니다.</p></div>';
             } else {
                 const grid = document.createElement('div');
                 grid.className = 'webtoon-grid';
@@ -1300,7 +1459,7 @@ HTML_CONTENT = """
                     card.onclick = () => selectWebtoon(wt.path, wt.name, card);
                     grid.appendChild(card);
                 });
-                list.appendChild(grid);
+                wrapper.appendChild(grid);
             }
             showLoader(false);
         }
@@ -1313,6 +1472,11 @@ HTML_CONTENT = """
             document.querySelectorAll('.webtoon-card').forEach(el => el.classList.remove('active'));
             if (element) {
                 element.classList.add('active');
+            }
+            
+            // 모바일 환경일 경우, 웹툰을 선택하면 내서재를 자동으로 접어서 에피소드 목록이 한눈에 들어오게 함
+            if (isWeb && !isLibraryCollapsed) {
+                toggleLibraryCollapse();
             }
             
             showLoader(true);
@@ -1759,14 +1923,21 @@ HTML_CONTENT = """
             }
             
             try {
-                const serverUrl = await ApiWrapper.get_server_url();
                 const titleEl = document.getElementById('current-title');
-                if (!isWeb) {
-                    titleEl.innerHTML = `JoyViewer <span style="font-size:12px; color:var(--accent); font-weight:normal; margin-left:10px; opacity:0.8;">모바일 스트리밍: ${serverUrl}</span>`;
-                } else {
+                if (isWeb) {
                     titleEl.innerHTML = `JoyViewer <span style="font-size:12px; color:var(--accent); font-weight:normal; margin-left:10px; opacity:0.8;">모바일 접속 모드</span>`;
+                } else {
+                    titleEl.innerHTML = `JoyViewer`;
                 }
             } catch (e) {}
+            
+            // 로그인 필요 시 다른 API를 호출하지 않고 즉시 로그인 오버레이 표시 후 리턴 (401 에러 방지)
+            if (window.__NEEDS_LOGIN__) {
+                document.getElementById('server-info-box').style.display = 'none';
+                document.getElementById('login-overlay').style.display = 'flex';
+                document.getElementById('login-pw').focus();
+                return;
+            }
             
             await loadSettings();
             await loadLibrary();
@@ -1796,8 +1967,8 @@ HTML_CONTENT = """
                 stepPause: document.getElementById('step-pause').value
             };
             
-            const success = await ApiWrapper.save_config(config);
-            if (success) {
+            const res = await ApiWrapper.save_config(config);
+            if (res === true || (res && res.status === 'success')) {
                 const btn = document.querySelector('button[title="현재 스크롤 설정 저장"]');
                 const origColor = btn.style.color;
                 btn.style.color = 'var(--accent)';
@@ -1815,6 +1986,73 @@ HTML_CONTENT = """
                 
                 toggleScrollModeUI();
                 updateScrollSpeed();
+            }
+
+            // 원격 접속 정보 표시 (로컬에서만 관리)
+            if (!isWeb) {
+                const serverUrl = await ApiWrapper.get_server_url();
+                document.getElementById('display-server-url').innerText = serverUrl;
+                
+                const config = await ApiWrapper.load_config();
+                if (config.password) {
+                    document.getElementById('input-server-pw').value = config.password;
+                }
+            } else {
+                // 원격 접속 시에는 서버 정보 박스를 아예 숨김
+                document.getElementById('server-info-box').style.display = 'none';
+            }
+        }
+
+        async function copyServerUrl() {
+            const url = document.getElementById('display-server-url').innerText;
+            try {
+                await navigator.clipboard.writeText(url);
+                const btn = document.getElementById('btn-copy-url');
+                btn.innerText = '복사됨!';
+                btn.style.borderColor = '#fff';
+                btn.style.color = '#fff';
+                setTimeout(() => {
+                    btn.innerText = '주소 복사';
+                    btn.style.borderColor = 'var(--accent)';
+                    btn.style.color = 'var(--accent)';
+                }, 2000);
+            } catch (err) {
+                alert('복사에 실패했습니다: ' + url);
+            }
+        }
+
+        async function saveServerPassword() {
+            const pw = document.getElementById('input-server-pw').value;
+            const config = await ApiWrapper.load_config();
+            config.password = pw;
+            const res = await ApiWrapper.save_config(config);
+            if (res === true || (res && res.status === 'success')) {
+                alert('원격 접속 암호가 저장되었습니다. (암호를 비우면 인증 없이 접속 가능)');
+            } else {
+                alert('저장 실패');
+            }
+        }
+
+        async function doLogin() {
+            const pw = document.getElementById('login-pw').value;
+            const msgEl = document.getElementById('login-msg');
+            
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password: pw })
+                });
+                const data = await response.json();
+                if (data.status === 'success') {
+                    window.location.reload();
+                } else {
+                    msgEl.innerText = data.message;
+                    msgEl.style.display = 'block';
+                }
+            } catch (err) {
+                msgEl.innerText = '서버 연결 오류';
+                msgEl.style.display = 'block';
             }
         }
 

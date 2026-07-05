@@ -119,6 +119,34 @@ if %errorlevel% neq 0 (
     goto ERROR_EXIT
 )
 
+:: 10. Check if GitHub CLI (gh) is installed and authenticated
+gh --version >nul 2>&1
+if !errorlevel! equ 0 (
+    powershell -Command "Write-Host '[*] GitHub CLI (gh) detected. Checking auth status...' -ForegroundColor Yellow"
+    
+    :: Temporarily clear GITHUB_TOKEN if it was set in the environment (common in agent workspaces)
+    set "GITHUB_TOKEN="
+    
+    gh auth status >nul 2>&1
+    if !errorlevel! equ 0 (
+        powershell -Command "Write-Host '[*] Creating GitHub Release and uploading dist\JoyViewer-v%VERSION%.exe...' -ForegroundColor Yellow"
+        
+        :: Delete existing GitHub release first to allow clean overwrite
+        gh release delete v%VERSION% -y >nul 2>&1
+        
+        gh release create v%VERSION% "dist\JoyViewer-v%VERSION%.exe" --title "JoyViewer v%VERSION%" --notes "Release v%VERSION%"
+        if !errorlevel! equ 0 (
+            powershell -Command "Write-Host '[+] Successfully created GitHub Release and uploaded executable!' -ForegroundColor Green"
+        ) else (
+            powershell -Command "Write-Host '[WARNING] Failed to create GitHub Release.' -ForegroundColor Yellow"
+        )
+    ) else (
+        powershell -Command "Write-Host '[WARNING] GitHub CLI is not authenticated. Skipping automatic GitHub Release creation. Run \"gh auth login\" to authenticate.' -ForegroundColor Yellow"
+    )
+) else (
+    powershell -Command "Write-Host '[i] GitHub CLI (gh) not detected. Skipping automatic GitHub Release creation.' -ForegroundColor Gray"
+)
+
 echo.
 echo ===================================================
 powershell -Command "Write-Host '    AUTO-RELEASE SUCCESSFUL!    ' -ForegroundColor Black -BackgroundColor Green"

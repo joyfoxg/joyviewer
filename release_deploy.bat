@@ -21,7 +21,9 @@ if "%BRANCH%"=="" set BRANCH=main
 powershell -Command "Write-Host '[+] Active branch detected: %BRANCH%' -ForegroundColor Green"
 
 :: 3. Automatically parse version from webtoon_viewer.py
-for /f "tokens=*" %%i in ('powershell -Command "if ((Get-Content webtoon_viewer.py) -match 'APP_NAME\s*=\s*\"[^\"]+v([\d\.]+)\"') { $Matches[1] } else { '4.3' }"') do set VERSION=%%i
+powershell -NoProfile -Command "if ((Get-Content webtoon_viewer.py) -match 'APP_NAME\s*=\s*\"[^\"]+v([\d\.]+)\"') { Set-Content temp_ver.txt $Matches[1] } else { Set-Content temp_ver.txt '4.3' }"
+set /p VERSION=<temp_ver.txt
+del temp_ver.txt
 powershell -Command "Write-Host '[+] Parsed version from source: v%VERSION%' -ForegroundColor Green"
 echo.
 
@@ -42,23 +44,29 @@ if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 
 :: 6. Check Python & PyInstaller
-where python >nul 2>nul
-if %errorlevel% neq 0 (
-    powershell -Command "Write-Host '[ERROR] Python is not installed!' -ForegroundColor Red"
-    goto ERROR_EXIT
+set "PYTHON_EXE=python"
+if exist "C:\Python\Python313\python.exe" (
+    set "PYTHON_EXE=C:\Python\Python313\python.exe"
+) else (
+    where python >nul 2>nul
+    if !errorlevel! neq 0 (
+        powershell -Command "Write-Host '[ERROR] Python is not installed or not in PATH!' -ForegroundColor Red"
+        goto ERROR_EXIT
+    )
 )
+powershell -Command "Write-Host '[*] Using python path: %PYTHON_EXE%' -ForegroundColor Green"
 powershell -Command "Write-Host '[*] Installing/upgrading PyInstaller...' -ForegroundColor Yellow"
-python -m pip install pyinstaller --quiet
+"%PYTHON_EXE%" -m pip install pyinstaller --quiet
 
 :: 7. Compile using Spec file
 powershell -Command "Write-Host '[*] Running PyInstaller compilation...' -ForegroundColor Yellow"
 if exist "JoyViewer.spec" (
-    python -m PyInstaller --clean JoyViewer.spec
+    "%PYTHON_EXE%" -m PyInstaller --clean JoyViewer.spec
 ) else (
-    python -m PyInstaller -w -F --name "JoyViewer" webtoon_viewer.py --clean
+    "%PYTHON_EXE%" -m PyInstaller -w -F --name "JoyViewer" webtoon_viewer.py --clean
 )
 
-if %errorlevel% neq 0 (
+if !errorlevel! neq 0 (
     powershell -Command "Write-Host '[ERROR] PyInstaller compilation failed!' -ForegroundColor Red"
     goto ERROR_EXIT
 )

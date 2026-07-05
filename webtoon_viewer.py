@@ -36,6 +36,21 @@ def get_local_ip():
     except:
         return "127.0.0.1"
 
+def is_text_or_zip_novel(item_path):
+    if item_path.lower().endswith('.txt'):
+        return True
+    if item_path.lower().endswith(('.cbz', '.zip')):
+        try:
+            import zipfile
+            with zipfile.ZipFile(item_path, 'r') as z:
+                namelist = z.namelist()
+                has_txt = any(f.lower().endswith('.txt') for f in namelist)
+                has_img = any(f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')) for f in namelist)
+                return has_txt and not has_img
+        except:
+            pass
+    return False
+
 class WebtoonApi:
     def __init__(self):
         config = self.load_config()
@@ -142,7 +157,7 @@ class WebtoonApi:
         import json
         import base64
         import zipfile
-        if episode_path.lower().endswith('.cbz'):
+        if episode_path.lower().endswith(('.cbz', '.zip')):
             try:
                 with zipfile.ZipFile(episode_path, 'r') as z:
                     img_files = [f for f in z.namelist() if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif'))]
@@ -186,10 +201,10 @@ class WebtoonApi:
                 
                 # 1. 상위 폴더(여러 웹툰/소설이 있는 서재)
                 if os.path.isdir(path):
-                    episodes = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f)) or f.lower().endswith(('.cbz', '.txt'))]
+                    episodes = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f)) or f.lower().endswith(('.cbz', '.zip', '.txt'))]
                     if episodes:
                         thumb = resolve_thumb(path, os.path.join(path, episodes[0]))
-                        is_novel = any(f.lower().endswith('.txt') for f in episodes)
+                        is_novel = any(is_text_or_zip_novel(os.path.join(path, f)) for f in episodes)
                         webtoons.append({
                             "name": item,
                             "path": path,
@@ -199,15 +214,15 @@ class WebtoonApi:
                         })
                 
                 # 2. 웹툰 폴더 자체
-                if item.lower().endswith(('.cbz', '.txt')) or (os.path.isdir(path) and any(f.lower().endswith(('.jpg', '.png', '.webp', '.txt')) for f in os.listdir(path))):
+                if item.lower().endswith(('.cbz', '.zip', '.txt')) or (os.path.isdir(path) and any(f.lower().endswith(('.jpg', '.png', '.webp', '.txt')) for f in os.listdir(path))):
                     has_direct_episodes = True
                     
             if has_direct_episodes:
                 folder_name = os.path.basename(root_dir)
-                episodes = [f for f in os.listdir(root_dir) if f.lower().endswith(('.cbz', '.txt')) or os.path.isdir(os.path.join(root_dir, f))]
+                episodes = [f for f in os.listdir(root_dir) if f.lower().endswith(('.cbz', '.zip', '.txt')) or os.path.isdir(os.path.join(root_dir, f))]
                 if episodes:
                     thumb = resolve_thumb(root_dir, os.path.join(root_dir, episodes[0]))
-                    is_novel = any(f.lower().endswith('.txt') for f in episodes)
+                    is_novel = any(is_text_or_zip_novel(os.path.join(root_dir, f)) for f in episodes)
                     if not any(w["path"] == root_dir for w in webtoons):
                         webtoons.append({
                             "name": folder_name,
@@ -234,8 +249,8 @@ class WebtoonApi:
         for item in items:
             full_path = os.path.join(webtoon_path, item)
             is_valid = False
-            is_cbz = item.lower().endswith('.cbz')
-            is_txt = item.lower().endswith('.txt')
+            is_txt = is_text_or_zip_novel(full_path)
+            is_cbz = item.lower().endswith(('.cbz', '.zip')) and not is_txt
             
             if is_cbz or is_txt:
                 is_valid = True
@@ -258,6 +273,38 @@ class WebtoonApi:
     def get_text_content(self, file_path):
         if not os.path.exists(file_path):
             return "파일을 찾을 수 없습니다."
+        
+        # 만약 압축 파일(.zip, .cbz)인 경우 내부 txt 파일들을 읽어옴
+        if file_path.lower().endswith(('.cbz', '.zip')):
+            try:
+                import zipfile
+                with zipfile.ZipFile(file_path, 'r') as z:
+                    txt_files = [f for f in z.namelist() if f.lower().endswith('.txt')]
+                    txt_files.sort()
+                    if not txt_files:
+                        return "압축 파일 내에 텍스트(.txt) 파일이 존재하지 않습니다."
+                    
+                    combined_text = []
+                    for txt_file in txt_files:
+                        with z.open(txt_file) as f_bytes:
+                            content_bytes = f_bytes.read()
+                            # 인코딩 디코딩 시도
+                            decoded = None
+                            for encoding in ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']:
+                                try:
+                                    decoded = content_bytes.decode(encoding)
+                                    break
+                                except UnicodeDecodeError:
+                                    continue
+                            if decoded is not None:
+                                combined_text.append(decoded)
+                            else:
+                                combined_text.append(f"\n[오류: {txt_file} 파일의 인코딩을 해독할 수 없습니다.]\n")
+                    return "\n\n".join(combined_text)
+            except Exception as e:
+                return f"압축 파일을 읽는 중 오류가 발생했습니다: {str(e)}"
+        
+        # 일반 텍스트 파일인 경우
         try:
             for encoding in ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']:
                 try:
@@ -277,7 +324,7 @@ class WebtoonApi:
         import zipfile
         image_urls = []
         
-        if episode_path.lower().endswith('.cbz'):
+        if episode_path.lower().endswith(('.cbz', '.zip')):
             with zipfile.ZipFile(episode_path, 'r') as zip_ref:
                 img_files = [f for f in zip_ref.namelist() if f.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif'))]
                 img_files.sort()
@@ -325,7 +372,7 @@ def serve_image(payload):
     if not os.path.exists(episode_path):
         return "Not found"
 
-    if episode_path.lower().endswith('.cbz'):
+    if episode_path.lower().endswith(('.cbz', '.zip')):
         try:
             with zipfile.ZipFile(episode_path, 'r') as zip_ref:
                 with zip_ref.open(img_file) as file:

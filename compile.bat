@@ -7,7 +7,7 @@ set "ESC="
 for /f %%A in ('echo prompt $E ^| cmd') do set "ESC=%%A"
 
 echo ===================================================
-powershell -Command "Write-Host '   JoyViewer Premium Compiler (v4.3)   ' -ForegroundColor Black -BackgroundColor Cyan"
+powershell -Command "Write-Host '   JoyViewer Premium Compiler (v4.4)   ' -ForegroundColor Black -BackgroundColor Cyan"
 echo ===================================================
 echo.
 
@@ -76,10 +76,10 @@ powershell -Command "Write-Host '[*] Post-processing output files...' -Foregroun
 if exist "dist\JoyViewer.exe" (
     powershell -Command "Write-Host '[+] Successfully compiled JoyViewer.exe!' -ForegroundColor Green"
     
-    :: Rename to include version v4.3 for the final build
-    copy /Y "dist\JoyViewer.exe" "dist\JoyViewer-v4.3.exe" >nul
+    :: Rename to include version v4.4 for the final build
+    copy /Y "dist\JoyViewer.exe" "dist\JoyViewer-v4.4.exe" >nul
     if %errorlevel% equ 0 (
-        powershell -Command "Write-Host '[+] Version-stamped copy created: dist\JoyViewer-v4.3.exe' -ForegroundColor Green"
+        powershell -Command "Write-Host '[+] Version-stamped copy created: dist\JoyViewer-v4.4.exe' -ForegroundColor Green"
     )
     
     :: Ensure config file exists in the dist directory
@@ -98,7 +98,7 @@ echo.
 echo ===================================================
 powershell -Command "Write-Host '   BUILD COMPLETED SUCCESSFULLY!   ' -ForegroundColor Black -BackgroundColor Green"
 echo ===================================================
-echo [Location] e:\joyviewer\dist\JoyViewer-v4.3.exe
+echo [Location] e:\joyviewer\dist\JoyViewer-v4.4.exe
 echo.
 pause
 exit /b 0

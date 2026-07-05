@@ -21,7 +21,7 @@ if "%BRANCH%"=="" set BRANCH=main
 powershell -Command "Write-Host '[+] Active branch detected: %BRANCH%' -ForegroundColor Green"
 
 :: 3. Automatically parse version from webtoon_viewer.py
-powershell -NoProfile -Command "if ((Get-Content webtoon_viewer.py) -match 'APP_NAME\s*=\s*\"[^\"]+v([\d\.]+)\"') { Set-Content temp_ver.txt $Matches[1] } else { Set-Content temp_ver.txt '4.3' }"
+powershell -NoProfile -Command "if ((Get-Content webtoon_viewer.py) -match 'APP_NAME\s*=\s*\"[^\"]+v([\d\.]+)\"') { Set-Content temp_ver.txt $Matches[1] } else { Set-Content temp_ver.txt '4.4' }"
 set /p VERSION=<temp_ver.txt
 del temp_ver.txt
 powershell -Command "Write-Host '[+] Parsed version from source: v%VERSION%' -ForegroundColor Green"

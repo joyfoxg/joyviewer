@@ -12,7 +12,7 @@ from PIL import Image
 import io
 
 # 설정
-APP_NAME = "JoyViewer - Webtoon Reader v4.3"
+APP_NAME = "JoyViewer - Webtoon Reader v4.4"
 PORT = 58210
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "joyviewer_cache")
 
@@ -554,6 +554,8 @@ HTML_CONTENT = """
             --text-dim: #888888;
             --glass: rgba(255, 255, 255, 0.05);
             --glass-border: rgba(255, 255, 255, 0.1);
+            --novel-font-family: 'Noto Serif KR', 'Georgia', serif;
+            --novel-font-size: 21px;
         }
 
         * {
@@ -1099,11 +1101,11 @@ HTML_CONTENT = """
             max-width: 800px;
             margin: 0 auto;
             padding: 50px 40px 120px 40px;
-            font-size: 21px;
+            font-size: var(--novel-font-size);
             line-height: 1.85;
             color: #e2e2e7;
             background-color: #0d0d11;
-            font-family: 'Noto Serif KR', 'Georgia', serif;
+            font-family: var(--novel-font-family);
             text-align: justify;
             white-space: pre-wrap;
             word-break: break-all;
@@ -1341,6 +1343,56 @@ HTML_CONTENT = """
             font-weight: bold;
             user-select: none;
         }
+
+        /* Settings Panel */
+        #settings-panel {
+            position: absolute;
+            top: 70px;
+            right: 20px;
+            width: 320px;
+            background: var(--sidebar-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 8px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            backdrop-filter: blur(20px);
+        }
+
+        .settings-content {
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .setting-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .setting-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .setting-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .setting-val {
+            font-size: 13px;
+            font-weight: bold;
+            color: var(--accent);
+        }
     </style>
 </head>
 <body>
@@ -1359,7 +1411,7 @@ HTML_CONTENT = """
                     <img src="__LOGO_BASE64__" width="28" height="28" alt="JoyViewer Logo" style="object-fit: contain; border-radius: 6px;">
                     <span>JoyViewer</span>
                 </div>
-                <span style="font-size: 11px; background: rgba(0, 255, 163, 0.1); color: var(--accent); border: 1px solid var(--accent-glow); padding: 2px 6px; border-radius: 20px; font-weight: 800; font-family: monospace; user-select: none;">v4.3</span>
+                <span style="font-size: 11px; background: rgba(0, 255, 163, 0.1); color: var(--accent); border: 1px solid var(--accent-glow); padding: 2px 6px; border-radius: 20px; font-weight: 800; font-family: monospace; user-select: none;">v4.4</span>
             </div>
         </div>
         <div id="server-info-box" style="padding: 12px 15px; border-bottom: 1px solid var(--glass-border);">
@@ -1431,6 +1483,9 @@ HTML_CONTENT = """
                 <button class="btn-ctrl" onclick="saveSettings()" title="현재 스크롤 설정 저장" style="display:flex; align-items:center;">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
                 </button>
+                <button class="btn-ctrl" onclick="toggleSettingsPanel()" title="설정" style="display:flex; align-items:center;">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                </button>
             </div>
         </div>
 
@@ -1446,6 +1501,34 @@ HTML_CONTENT = """
                 <button onclick="addBookmark()" class="btn-ctrl" style="padding: 4px 8px; font-size:12px;">+ 현재 위치 저장</button>
             </div>
             <div id="bookmark-list"></div>
+        </div>
+
+        <div id="settings-panel" style="display: none;">
+            <div class="panel-header">
+                <span>설정</span>
+                <button onclick="toggleSettingsPanel()" class="btn-ctrl" style="padding: 4px 8px; font-size:12px;">✕</button>
+            </div>
+            <div class="settings-content">
+                <div class="setting-group">
+                    <span class="setting-label">소설 모드 글꼴 종류</span>
+                    <select id="setting-font-family" class="ctrl-select" style="width: 100%;" onchange="applyNovelFontSettings()">
+                        <option value="'Noto Serif KR', 'Georgia', serif">Noto Serif KR (기본 명조)</option>
+                        <option value="'Noto Sans KR', 'Inter', sans-serif">Noto Sans KR (고딕)</option>
+                        <option value="'Nanum Gothic', sans-serif">나눔고딕</option>
+                        <option value="'Nanum Myeongjo', serif">나눔명조</option>
+                        <option value="Georgia, serif">Georgia (영문 Serif)</option>
+                        <option value="system-ui, -apple-system, sans-serif">시스템 기본 고딕</option>
+                    </select>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-row">
+                        <span class="setting-label">소설 모드 글꼴 크기</span>
+                        <span id="setting-font-size-val" class="setting-val">21px</span>
+                    </div>
+                    <input type="range" id="setting-font-size" min="14" max="36" value="21" style="width: 100%; accent-color: var(--accent); cursor: pointer;" oninput="applyNovelFontSettings()">
+                </div>
+                <button class="btn-folder" onclick="saveSettingsAndNotify()" style="margin-top: 10px;">설정 저장</button>
+            </div>
         </div>
 
         <div id="viewer-container">
@@ -1546,6 +1629,7 @@ HTML_CONTENT = """
         let pendingScrollTop = null;
         let isBookmarkPanelOpen = false;
         let bookmarks = [];
+        let isSettingsPanelOpen = false;
 
         let isLibraryCollapsed = false;
         function toggleLibraryCollapse() {
@@ -1791,9 +1875,30 @@ HTML_CONTENT = """
             isBookmarkPanelOpen = !isBookmarkPanelOpen;
             panel.style.display = isBookmarkPanelOpen ? 'flex' : 'none';
             if (isBookmarkPanelOpen) {
+                isSettingsPanelOpen = false;
+                document.getElementById('settings-panel').style.display = 'none';
                 bookmarks = await ApiWrapper.get_bookmarks();
                 renderBookmarks();
             }
+        }
+
+        function toggleSettingsPanel() {
+            const panel = document.getElementById('settings-panel');
+            isSettingsPanelOpen = !isSettingsPanelOpen;
+            panel.style.display = isSettingsPanelOpen ? 'flex' : 'none';
+            if (isSettingsPanelOpen) {
+                isBookmarkPanelOpen = false;
+                document.getElementById('bookmark-panel').style.display = 'none';
+            }
+        }
+
+        function applyNovelFontSettings() {
+            const family = document.getElementById('setting-font-family').value;
+            const size = document.getElementById('setting-font-size').value;
+            
+            document.documentElement.style.setProperty('--novel-font-family', family);
+            document.documentElement.style.setProperty('--novel-font-size', size + 'px');
+            document.getElementById('setting-font-size-val').innerText = size + 'px';
         }
 
         async function addBookmark() {
@@ -2181,15 +2286,31 @@ HTML_CONTENT = """
                 scrollMode: document.getElementById('scroll-mode').value,
                 smoothSpeed: document.getElementById('auto-scroll-speed').value,
                 stepDistance: document.getElementById('step-distance').value,
-                stepPause: document.getElementById('step-pause').value
+                stepPause: document.getElementById('step-pause').value,
+                novelFontFamily: document.getElementById('setting-font-family').value,
+                novelFontSize: document.getElementById('setting-font-size').value
             };
             
             const res = await ApiWrapper.save_config(config);
             if (res === true || (res && res.status === 'success')) {
                 const btn = document.querySelector('button[title="현재 스크롤 설정 저장"]');
-                const origColor = btn.style.color;
-                btn.style.color = 'var(--accent)';
-                setTimeout(() => btn.style.color = origColor, 1000);
+                if (btn) {
+                    const origColor = btn.style.color;
+                    btn.style.color = 'var(--accent)';
+                    setTimeout(() => btn.style.color = origColor, 1000);
+                }
+                return true;
+            }
+            return false;
+        }
+
+        async function saveSettingsAndNotify() {
+            const success = await saveSettings();
+            if (success) {
+                alert("설정이 저장되었습니다.");
+                toggleSettingsPanel();
+            } else {
+                alert("설정 저장에 실패했습니다.");
             }
         }
 
@@ -2201,8 +2322,14 @@ HTML_CONTENT = """
                 if (config.stepDistance) document.getElementById('step-distance').value = config.stepDistance;
                 if (config.stepPause) document.getElementById('step-pause').value = config.stepPause;
                 
+                if (config.novelFontFamily) document.getElementById('setting-font-family').value = config.novelFontFamily;
+                if (config.novelFontSize) document.getElementById('setting-font-size').value = config.novelFontSize;
+                
                 toggleScrollModeUI();
                 updateScrollSpeed();
+                applyNovelFontSettings();
+            } else {
+                applyNovelFontSettings();
             }
 
             // 원격 접속 정보 표시 (로컬에서만 관리)

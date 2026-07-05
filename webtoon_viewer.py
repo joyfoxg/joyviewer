@@ -12,7 +12,7 @@ from PIL import Image
 import io
 
 # 설정
-APP_NAME = "JoyViewer - Webtoon Reader v4.2"
+APP_NAME = "JoyViewer - Webtoon Reader v4.3"
 PORT = 58210
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "joyviewer_cache")
 
@@ -184,34 +184,38 @@ class WebtoonApi:
             for item in os.listdir(root_dir):
                 path = os.path.join(root_dir, item)
                 
-                # 1. 상위 폴더(여러 웹툰이 있는 서재)
+                # 1. 상위 폴더(여러 웹툰/소설이 있는 서재)
                 if os.path.isdir(path):
-                    episodes = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f)) or f.lower().endswith('.cbz')]
+                    episodes = [f for f in os.listdir(path) if os.path.isdir(os.path.join(path, f)) or f.lower().endswith(('.cbz', '.txt'))]
                     if episodes:
                         thumb = resolve_thumb(path, os.path.join(path, episodes[0]))
+                        is_novel = any(f.lower().endswith('.txt') for f in episodes)
                         webtoons.append({
                             "name": item,
                             "path": path,
                             "count": len(episodes),
-                            "thumbnail": thumb
+                            "thumbnail": thumb,
+                            "is_novel": is_novel
                         })
                 
                 # 2. 웹툰 폴더 자체
-                if item.lower().endswith('.cbz') or (os.path.isdir(path) and any(f.lower().endswith(('.jpg', '.png', '.webp')) for f in os.listdir(path))):
+                if item.lower().endswith(('.cbz', '.txt')) or (os.path.isdir(path) and any(f.lower().endswith(('.jpg', '.png', '.webp', '.txt')) for f in os.listdir(path))):
                     has_direct_episodes = True
                     
             if has_direct_episodes:
                 folder_name = os.path.basename(root_dir)
-                episodes = [f for f in os.listdir(root_dir) if f.lower().endswith('.cbz') or os.path.isdir(os.path.join(root_dir, f))]
+                episodes = [f for f in os.listdir(root_dir) if f.lower().endswith(('.cbz', '.txt')) or os.path.isdir(os.path.join(root_dir, f))]
                 if episodes:
                     thumb = resolve_thumb(root_dir, os.path.join(root_dir, episodes[0]))
+                    is_novel = any(f.lower().endswith('.txt') for f in episodes)
                     if not any(w["path"] == root_dir for w in webtoons):
                         webtoons.append({
                             "name": folder_name,
                             "path": root_dir,
                             "count": len(episodes),
                             "is_direct": True,
-                            "thumbnail": thumb
+                            "thumbnail": thumb,
+                            "is_novel": is_novel
                         })
         return webtoons
 
@@ -229,17 +233,41 @@ class WebtoonApi:
         
         for item in items:
             full_path = os.path.join(webtoon_path, item)
-            if item.lower().endswith('.cbz') or (os.path.isdir(full_path) and any(f.lower().endswith(('.jpg', '.png', '.webp')) for f in os.listdir(full_path))):
+            is_valid = False
+            is_cbz = item.lower().endswith('.cbz')
+            is_txt = item.lower().endswith('.txt')
+            
+            if is_cbz or is_txt:
+                is_valid = True
+            elif os.path.isdir(full_path) and any(f.lower().endswith(('.jpg', '.png', '.webp')) for f in os.listdir(full_path)):
+                is_valid = True
+                
+            if is_valid:
                 ep_name = item
-                if item.lower().endswith('.cbz'):
+                if is_cbz or is_txt:
                     ep_name = item[:-4]
                 episodes.append({
                     "name": ep_name,
                     "filename": item,
-                    "is_cbz": item.lower().endswith('.cbz'),
+                    "is_cbz": is_cbz,
+                    "is_txt": is_txt,
                     "path": full_path
                 })
         return episodes
+
+    def get_text_content(self, file_path):
+        if not os.path.exists(file_path):
+            return "파일을 찾을 수 없습니다."
+        try:
+            for encoding in ['utf-8', 'cp949', 'euc-kr', 'utf-16', 'utf-8-sig']:
+                try:
+                    with open(file_path, 'r', encoding=encoding) as f:
+                        return f.read()
+                except UnicodeDecodeError:
+                    continue
+        except Exception as e:
+            return f"파일을 읽는 중 오류가 발생했습니다: {str(e)}"
+        return "파일 인코딩을 지원하지 않거나 해독할 수 없습니다."
 
     def get_images(self, episode_path):
         if not os.path.exists(episode_path):
@@ -398,6 +426,12 @@ def api_images():
     response.content_type = 'application/json'
     return json.dumps(urls)
 
+@app.route('/api/text')
+def api_text():
+    path = request.query.path
+    response.content_type = 'text/plain; charset=utf-8'
+    return api.get_text_content(path)
+
 @app.route('/api/bookmarks', method='GET')
 def api_get_bookmarks():
     import json
@@ -462,7 +496,7 @@ HTML_CONTENT = """
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>JoyViewer</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=Noto+Sans+KR:wght@300;400;700&family=Noto+Serif+KR:wght@400;700&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-dark: #0a0a0c;
@@ -1014,6 +1048,25 @@ HTML_CONTENT = """
             background-color: #111; /* 로딩 중 배경색 */
         }
 
+        .novel-text-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 50px 40px 120px 40px;
+            font-size: 21px;
+            line-height: 1.85;
+            color: #e2e2e7;
+            background-color: #0d0d11;
+            font-family: 'Noto Serif KR', 'Georgia', serif;
+            text-align: justify;
+            white-space: pre-wrap;
+            word-break: break-all;
+            user-select: text;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+            border-left: 1px solid rgba(255, 255, 255, 0.03);
+            border-right: 1px solid rgba(255, 255, 255, 0.03);
+            border-radius: 8px;
+        }
+
         .viewer-footer {
             padding: 60px 0 100px 0;
             display: flex;
@@ -1259,7 +1312,7 @@ HTML_CONTENT = """
                     <img src="__LOGO_BASE64__" width="28" height="28" alt="JoyViewer Logo" style="object-fit: contain; border-radius: 6px;">
                     <span>JoyViewer</span>
                 </div>
-                <span style="font-size: 11px; background: rgba(0, 255, 163, 0.1); color: var(--accent); border: 1px solid var(--accent-glow); padding: 2px 6px; border-radius: 20px; font-weight: 800; font-family: monospace; user-select: none;">v4.2</span>
+                <span style="font-size: 11px; background: rgba(0, 255, 163, 0.1); color: var(--accent); border: 1px solid var(--accent-glow); padding: 2px 6px; border-radius: 20px; font-weight: 800; font-family: monospace; user-select: none;">v4.3</span>
             </div>
         </div>
         <div id="server-info-box" style="padding: 12px 15px; border-bottom: 1px solid var(--glass-border);">
@@ -1274,7 +1327,7 @@ HTML_CONTENT = """
             </div>
             <button class="btn-folder" onclick="selectFolder()" style="width:100%; margin-top:12px; background: rgba(255,255,255,0.03); border: 1px dashed var(--glass-border); color: #fff; display:flex; align-items:center; justify-content:center; gap:8px; padding:10px; border-radius:6px; cursor:pointer; font-size:12px; font-weight:600; transition:all 0.2s;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path><line x1="12" y1="11" x2="12" y2="17"></line><line x1="9" y1="14" x2="15" y2="14"></line></svg>
-                웹툰폴더+
+                웹툰&소설+
             </button>
         </div>
 
@@ -1285,7 +1338,7 @@ HTML_CONTENT = """
             </div>
             <div id="webtoon-items-wrapper">
                 <div class="empty-state" style="padding-top: 30px;">
-                    <p>아래 '웹툰폴더+'를 눌러<br>웹툰을 불러오세요.</p>
+                    <p>아래 '웹툰&소설+'를 눌러<br>작품을 불러오세요.</p>
                 </div>
             </div>
         </div>
@@ -1352,7 +1405,7 @@ HTML_CONTENT = """
             <div id="welcome-screen" class="empty-state">
                 <img src="__LOGO_BASE64__" width="100" height="100" alt="JoyViewer Logo" style="object-fit: contain; margin-bottom: 24px; border-radius: 20px; box-shadow: 0 0 25px rgba(0, 255, 163, 0.25); border: 1px solid rgba(255, 255, 255, 0.1);">
                 <h1>시작할 준비가 되었습니다</h1>
-                <p>왼쪽에서 웹툰과 화차를 선택해 감상을 시작하세요.</p>
+                <p>왼쪽에서 웹툰/소설과 화차를 선택해 감상을 시작하세요.</p>
             </div>
             <div id="image-stack"></div>
             <div id="viewer-controls" class="viewer-footer" style="display: none;">
@@ -1388,6 +1441,11 @@ HTML_CONTENT = """
                 if (!isWeb) return await pywebview.api.get_images(path);
                 const res = await fetch('/api/images?path=' + encodeURIComponent(path));
                 return await res.json();
+            },
+            async get_text(path) {
+                if (!isWeb) return await pywebview.api.get_text_content(path);
+                const res = await fetch('/api/text?path=' + encodeURIComponent(path));
+                return await res.text();
             },
             async get_bookmarks() {
                 if (!isWeb) return await pywebview.api.get_bookmarks();
@@ -1475,7 +1533,7 @@ HTML_CONTENT = """
             wrapper.innerHTML = '';
             
             if (webtoons.length === 0) {
-                wrapper.innerHTML = '<div class="empty-state"><p>웹툰을 찾을 수 없습니다.</p></div>';
+                wrapper.innerHTML = '<div class="empty-state"><p>등록된 웹툰/소설이 없습니다.</p></div>';
             } else {
                 const grid = document.createElement('div');
                 grid.className = 'webtoon-grid';
@@ -1485,14 +1543,17 @@ HTML_CONTENT = """
                     card.className = 'webtoon-card';
                     card.id = `wt-card-${index}`;
                     
-                    const thumbHtml = wt.thumbnail ? `<img src="${wt.thumbnail}" alt="thumbnail">` : `<div style="height:120px; background:#222; display:flex; align-items:center; justify-content:center; color:#555; font-size:11px;">No Image</div>`;
+                    const defaultThumb = wt.is_novel 
+                        ? `<div style="height:120px; background:linear-gradient(135deg, #1e1e24, #121214); border-bottom: 1px solid var(--glass-border); display:flex; flex-direction:column; align-items:center; justify-content:center; color:var(--accent); font-size:12px; font-weight:bold; gap:6px;"><span style="font-size:24px;">📖</span>소설 (Novel)</div>`
+                        : `<div style="height:120px; background:#222; display:flex; align-items:center; justify-content:center; color:#555; font-size:11px;">No Image</div>`;
+                    const thumbHtml = wt.thumbnail ? `<img src="${wt.thumbnail}" alt="thumbnail">` : defaultThumb;
                     
                     card.innerHTML = `
                         <button class="btn-edit-thumb" title="표지 변경">✏️</button>
                         ${thumbHtml}
                         <div class="info">
                             <div class="title" title="${wt.name}">${wt.name}</div>
-                            <div class="meta">${wt.is_direct ? '단일 웹툰' : wt.count + '개의 화차'}</div>
+                            <div class="meta">${wt.is_novel ? (wt.is_direct ? '단일 소설' : wt.count + '개의 장/화') : (wt.is_direct ? '단일 웹툰' : wt.count + '개의 화차')}</div>
                         </div>
                     `;
                     
@@ -1564,28 +1625,40 @@ HTML_CONTENT = """
             document.getElementById('welcome-screen').style.display = 'none';
             
             showLoader(true);
-            const images = await ApiWrapper.get_images(episode.path);
-            
             const stack = document.getElementById('image-stack');
             stack.innerHTML = '';
             
-            let firstImgLoadPromise = Promise.resolve();
-            images.forEach((url, i) => {
-                const img = document.createElement('img');
-                img.className = 'webtoon-image';
-                img.src = url;
-                img.loading = 'lazy';
-                stack.appendChild(img);
-
-                // 첫 번째 이미지의 실제 로딩 완료를 감지하는 프로미스 생성
-                if (i === 0) {
-                    firstImgLoadPromise = new Promise(resolve => {
-                        img.onload = resolve;
-                        img.onerror = resolve; // 에러가 나더라도 무한 대기를 방지하기 위해 resolve 처리
-                        if (img.complete) resolve();
-                    });
+            let loadPromise = Promise.resolve();
+            
+            if (episode.is_txt) {
+                try {
+                    const text = await ApiWrapper.get_text(episode.path);
+                    const textDiv = document.createElement('div');
+                    textDiv.className = 'novel-text-container';
+                    textDiv.innerText = text;
+                    stack.appendChild(textDiv);
+                } catch (e) {
+                    stack.innerHTML = `<div class="empty-state"><h1>에러가 발생했습니다</h1><p>${e.message || e}</p></div>`;
                 }
-            });
+            } else {
+                const images = await ApiWrapper.get_images(episode.path);
+                
+                images.forEach((url, i) => {
+                    const img = document.createElement('img');
+                    img.className = 'webtoon-image';
+                    img.src = url;
+                    img.loading = 'lazy';
+                    stack.appendChild(img);
+
+                    if (i === 0) {
+                        loadPromise = new Promise(resolve => {
+                            img.onload = resolve;
+                            img.onerror = resolve;
+                            if (img.complete) resolve();
+                        });
+                    }
+                });
+            }
             
             if (pendingScrollTop !== null) {
                 setTimeout(() => {
@@ -1598,8 +1671,7 @@ HTML_CONTENT = """
             
             document.getElementById('viewer-controls').style.display = 'flex';
             
-            // 첫 번째 이미지가 브라우저에 확실히 로딩될 때까지 대기
-            await firstImgLoadPromise;
+            await loadPromise;
             
             // 이전/다음 화 버튼 상태
             const nextBtn = document.querySelector('.btn-next');
@@ -1828,6 +1900,11 @@ HTML_CONTENT = """
         document.getElementById('viewer-container').addEventListener('click', (e) => {
             // Ignore click on buttons, inputs, selects, etc.
             if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+                return;
+            }
+
+            // Ignore click if text is selected (common in text novels)
+            if (window.getSelection().toString().length > 0) {
                 return;
             }
 

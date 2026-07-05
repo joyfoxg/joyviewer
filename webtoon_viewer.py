@@ -12,7 +12,7 @@ from PIL import Image
 import io
 
 # 설정
-APP_NAME = "JoyViewer - Webtoon Reader v4.1"
+APP_NAME = "JoyViewer - Webtoon Reader v4.2"
 PORT = 58210
 TEMP_DIR = os.path.join(tempfile.gettempdir(), "joyviewer_cache")
 
@@ -22,6 +22,8 @@ if os.path.exists(TEMP_DIR):
 os.makedirs(TEMP_DIR, exist_ok=True)
 
 CONFIG_FILE = "joyviewer_config.json"
+
+window = None
 
 def get_local_ip():
     import socket
@@ -47,6 +49,11 @@ class WebtoonApi:
     def get_server_url(self):
         ip = get_local_ip()
         return f"http://{ip}:{PORT}"
+
+    def toggle_fullscreen(self):
+        global window
+        if window:
+            window.toggle_fullscreen()
 
     def load_config(self):
         try:
@@ -79,30 +86,34 @@ class WebtoonApi:
             return False
 
     def select_folder(self):
-        result = window.create_file_dialog(webview.FOLDER_DIALOG)
-        if result:
-            folder = result[0]
-            if folder not in self.library_folders:
-                self.library_folders.append(folder)
-                config = self.load_config()
-                config['library_folders'] = self.library_folders
-                self.save_config(config)
-            return {"status": "success", "path": folder}
+        global window
+        if window:
+            result = window.create_file_dialog(webview.FileDialog.FOLDER)
+            if result:
+                folder = result[0]
+                if folder not in self.library_folders:
+                    self.library_folders.append(folder)
+                    config = self.load_config()
+                    config['library_folders'] = self.library_folders
+                    self.save_config(config)
+                return {"status": "success", "path": folder}
         return {"status": "cancel"}
 
     def set_custom_thumbnail(self, webtoon_path):
-        result = window.create_file_dialog(
-            webview.OPEN_DIALOG, 
-            allow_multiple=False,
-            file_types=('Image Files (*.jpg;*.jpeg;*.png;*.webp;*.gif)',)
-        )
-        if result:
-            img_path = result[0]
-            self.custom_thumbnails[webtoon_path] = img_path
-            config = self.load_config()
-            config['custom_thumbnails'] = self.custom_thumbnails
-            self.save_config(config)
-            return {"status": "success"}
+        global window
+        if window:
+            result = window.create_file_dialog(
+                webview.FileDialog.OPEN, 
+                allow_multiple=False,
+                file_types=('Image Files (*.jpg;*.jpeg;*.png;*.webp;*.gif)',)
+            )
+            if result:
+                img_path = result[0]
+                self.custom_thumbnails[webtoon_path] = img_path
+                config = self.load_config()
+                config['custom_thumbnails'] = self.custom_thumbnails
+                self.save_config(config)
+                return {"status": "success"}
         return {"status": "cancel"}
 
     def save_bookmark(self, bookmark_data):
@@ -1195,6 +1206,41 @@ HTML_CONTENT = """
             font-weight: 800;
             cursor: pointer;
         }
+
+        /* Sidebar Toggle Handle */
+        .sidebar-toggle-handle {
+            position: absolute;
+            top: 50%;
+            left: 0;
+            transform: translateY(-50%);
+            width: 20px;
+            height: 60px;
+            background: var(--sidebar-bg);
+            border: 1px solid var(--glass-border);
+            border-left: none;
+            border-top-right-radius: 8px;
+            border-bottom-right-radius: 8px;
+            color: var(--text-dim);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            z-index: 1000;
+            transition: all 0.3s;
+            box-shadow: 4px 0 10px rgba(0,0,0,0.3);
+        }
+        
+        .sidebar-toggle-handle:hover {
+            color: var(--accent);
+            background: rgba(255, 255, 255, 0.1);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+        
+        .sidebar-toggle-handle span {
+            font-size: 10px;
+            font-weight: bold;
+            user-select: none;
+        }
     </style>
 </head>
 <body>
@@ -1210,10 +1256,10 @@ HTML_CONTENT = """
         <div class="sidebar-header">
             <div style="display: flex; align-items: center; justify-content: space-between;">
                 <div class="logo" style="margin-bottom: 0;">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                    <img src="__LOGO_BASE64__" width="28" height="28" alt="JoyViewer Logo" style="object-fit: contain; border-radius: 6px;">
                     <span>JoyViewer</span>
                 </div>
-                <span style="font-size: 11px; background: rgba(0, 255, 163, 0.1); color: var(--accent); border: 1px solid var(--accent-glow); padding: 2px 6px; border-radius: 20px; font-weight: 800; font-family: monospace; user-select: none;">v4.1</span>
+                <span style="font-size: 11px; background: rgba(0, 255, 163, 0.1); color: var(--accent); border: 1px solid var(--accent-glow); padding: 2px 6px; border-radius: 20px; font-weight: 800; font-family: monospace; user-select: none;">v4.2</span>
             </div>
         </div>
         <div id="server-info-box" style="padding: 12px 15px; border-bottom: 1px solid var(--glass-border);">
@@ -1250,6 +1296,9 @@ HTML_CONTENT = """
     </div>
 
     <div id="main">
+        <div id="sidebar-toggle-handle" class="sidebar-toggle-handle" onclick="toggleSidebar()" title="메뉴 접기/펴기">
+            <span id="sidebar-toggle-icon">◀</span>
+        </div>
         <div class="top-bar">
             <button class="btn-toggle" onclick="toggleSidebar()">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
@@ -1301,7 +1350,7 @@ HTML_CONTENT = """
 
         <div id="viewer-container">
             <div id="welcome-screen" class="empty-state">
-                <svg width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="var(--glass-border)" stroke-width="1" style="margin-bottom: 20px;"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                <img src="__LOGO_BASE64__" width="100" height="100" alt="JoyViewer Logo" style="object-fit: contain; margin-bottom: 24px; border-radius: 20px; box-shadow: 0 0 25px rgba(0, 255, 163, 0.25); border: 1px solid rgba(255, 255, 255, 0.1);">
                 <h1>시작할 준비가 되었습니다</h1>
                 <p>왼쪽에서 웹툰과 화차를 선택해 감상을 시작하세요.</p>
             </div>
@@ -1587,7 +1636,13 @@ HTML_CONTENT = """
         }
 
         function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('collapsed');
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.toggle('collapsed');
+            const isCollapsed = sidebar.classList.contains('collapsed');
+            const icon = document.getElementById('sidebar-toggle-icon');
+            if (icon) {
+                icon.innerText = isCollapsed ? '▶' : '◀';
+            }
         }
 
         function showLoader(show) {
@@ -1770,9 +1825,43 @@ HTML_CONTENT = """
             hideScrollMenu();
         }
 
-        document.getElementById('viewer-container').addEventListener('click', () => {
+        document.getElementById('viewer-container').addEventListener('click', (e) => {
+            // Ignore click on buttons, inputs, selects, etc.
+            if (e.target.tagName === 'BUTTON' || e.target.closest('button') || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') {
+                return;
+            }
+
             if (isAutoScrolling) {
                 stopScroll();
+                return;
+            }
+
+            if (currentEpIndex === -1) return;
+
+            const container = document.getElementById('viewer-container');
+            const rect = container.getBoundingClientRect();
+
+            // Ignore clicks on scrollbars
+            if (e.clientX >= rect.left + container.clientWidth || e.clientY >= rect.top + container.clientHeight) {
+                return;
+            }
+
+            const clickY = e.clientY - rect.top;
+            const containerHeight = rect.height;
+
+            // Click in top 40% of the viewer container: scroll up
+            if (clickY < containerHeight * 0.4) {
+                container.scrollBy({
+                    top: -container.clientHeight * 0.8,
+                    behavior: 'smooth'
+                });
+            } 
+            // Click in bottom 60% of the viewer container: scroll down
+            else {
+                container.scrollBy({
+                    top: container.clientHeight * 0.8,
+                    behavior: 'smooth'
+                });
             }
         });
 
@@ -1914,13 +2003,17 @@ HTML_CONTENT = """
             } else if (e.code === 'ArrowLeft') {
                 e.preventDefault();
                 loadPrevEpisode();
+            } else if (e.code === 'KeyM') {
+                e.preventDefault();
+                toggleSidebar();
+            } else if (e.code === 'KeyF' || e.code === 'F11') {
+                e.preventDefault();
+                toggleFullscreen();
             }
         });
 
         async function initApp() {
-            if (isWeb) {
-                document.getElementById('btn-fullscreen').style.display = 'flex';
-            }
+            document.getElementById('btn-fullscreen').style.display = 'flex';
             
             try {
                 const titleEl = document.getElementById('current-title');
@@ -2056,22 +2149,26 @@ HTML_CONTENT = """
             }
         }
 
-        function toggleFullscreen() {
-            if (!document.fullscreenElement) {
-                if (document.documentElement.requestFullscreen) {
-                    document.documentElement.requestFullscreen();
-                } else if (document.documentElement.webkitRequestFullscreen) {
-                    document.documentElement.webkitRequestFullscreen();
-                } else if (document.documentElement.msRequestFullscreen) {
-                    document.documentElement.msRequestFullscreen();
-                }
+        async function toggleFullscreen() {
+            if (!isWeb) {
+                await pywebview.api.toggle_fullscreen();
             } else {
-                if (document.exitFullscreen) {
-                    document.exitFullscreen();
-                } else if (document.webkitExitFullscreen) {
-                    document.webkitExitFullscreen();
-                } else if (document.msExitFullscreen) {
-                    document.msExitFullscreen();
+                if (!document.fullscreenElement) {
+                    if (document.documentElement.requestFullscreen) {
+                        document.documentElement.requestFullscreen();
+                    } else if (document.documentElement.webkitRequestFullscreen) {
+                        document.documentElement.webkitRequestFullscreen();
+                    } else if (document.documentElement.msRequestFullscreen) {
+                        document.documentElement.msRequestFullscreen();
+                    }
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    } else if (document.webkitExitFullscreen) {
+                        document.webkitExitFullscreen();
+                    } else if (document.msExitFullscreen) {
+                        document.msExitFullscreen();
+                    }
                 }
             }
         }
@@ -2094,6 +2191,21 @@ if __name__ == "__main__":
     server_thread = threading.Thread(target=run_server, daemon=True)
     server_thread.start()
     
+    # 로고 이미지 로드 및 Base64 인코딩
+    logo_base64 = ""
+    try:
+        logo_path = "logo.png"
+        if getattr(sys, 'frozen', False):
+            logo_path = os.path.join(getattr(sys, '_MEIPASS'), "logo.png")
+        if os.path.exists(logo_path):
+            with open(logo_path, "rb") as f:
+                logo_base64 = "data:image/png;base64," + base64.b64encode(f.read()).decode("utf-8")
+    except Exception as e:
+        print("Logo load error:", e)
+
+    if logo_base64:
+        HTML_CONTENT = HTML_CONTENT.replace("__LOGO_BASE64__", logo_base64)
+        
     # 웹뷰 창 생성
     window = webview.create_window(
         APP_NAME, 
@@ -2105,6 +2217,16 @@ if __name__ == "__main__":
     )
     
     try:
-        webview.start()
+        # 웹뷰 시작 (창 아이콘 설정 - Windows는 .ico, 기타 OS는 .png 필수)
+        import platform
+        icon_name = "logo.ico" if platform.system() == "Windows" else "logo.png"
+        
+        icon_path = icon_name
+        if getattr(sys, 'frozen', False):
+            bundled_icon = os.path.join(getattr(sys, '_MEIPASS'), icon_name)
+            if os.path.exists(bundled_icon):
+                icon_path = bundled_icon
+        
+        webview.start(icon=icon_path if os.path.exists(icon_path) else None)
     finally:
         reset_cache()

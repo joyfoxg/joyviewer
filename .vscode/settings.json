@@ -1,0 +1,12 @@
+{
+  "python.defaultInterpreterPath": "C:\\Python\\Python313\\python.exe",
+  "python.languageServer": "Default",
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}",
+    "C:\\Python\\Python313\\Lib\\site-packages"
+  ],
+  "python.autoComplete.extraPaths": [
+    "${workspaceFolder}",
+    "C:\\Python\\Python313\\Lib\\site-packages"
+  ]
+}
